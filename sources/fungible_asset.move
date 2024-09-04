@@ -17,6 +17,12 @@ module aptos_asset::fungible_asset {
         transfer_ref: TransferRef,
         burn_ref: BurnRef,
     }
+    
+    fun authorized_borrow_refs(owner: &signer, asset: Object<Metadata>)
+    :&ManagedFungibleAsset acquires ManagedFungibleAsset {
+        assert!(object::is_owner(asset, signer::address_of(owner)), error::permission_denied(ENOT_OWNER));
+        borrow_global<ManagedFungibleAsset>(object::object_address(&asset));
+    }
 
     // Initialize metadata object and store the refs.
     fun init_module(admin: &signer) {
@@ -48,20 +54,52 @@ module aptos_asset::fungible_asset {
     }
     public entry fun mint(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
+        // Ensure the caller is authorized to perform the mint operation
+        let mint_ref = &authorized_borrow_refs(admin, asset).mint_ref;
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
         let to_wallet = primary_fungible_store::ensure_primary_store_exists(to,asset);
-        let fa = fungible_asset::mint(&ManagedFungibleAsset.mint_ref, amount);
-        fungible_asset::deposit_with_ref(&ManagedFungibleAsset.transfer_ref,to_wallet,fa);
+        let fa = fungible_asset::mint(mint_ref, amount);
+        fungible_asset::deposit_with_ref(transfer_ref,to_wallet,fa);
     }
     public entry fun transfer(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
+        // Ensure the caller is authorized to perform the transfer operation
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
         let from_wallet = primary_fungible_store::primary_store(from, asset);
         let to_wallet = primary_fungible_store::ensure_primary_store_exists(to, asset);
-        fungible_asset::transfer_with_ref(&ManagedFungibleAsset.transfer_ref, from, to, amount);
+        fungible_asset::transfer_with_ref(transfer_ref, from, to, amount);
     }
     public entry fun burn(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset{
         let asset = get_metadata();
+        // Ensure the caller is authorized to perform the burn operation
+        let burn_ref = &authorized_borrow_refs(admin, asset).burn_ref;
         let from_wallet = primary_fungible_store::primary_store(from, asset);
-        fungible_asset::burn_from(ManagedFungibleAsset.burn_ref, from, amount);
+        fungible_asset::burn_from(burn_ref, from, amount);
+    }
+    public fun withdraw(admin: &signer, from: address, amount: u64): FungibleAsset acquires ManagedFungibleAsset{
+        let asset = get_metadata();
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
+        let from_wallet = primary_fungible_store::primary_store(from, asset);
+        fungible_asset::withdraw_with_ref(transfer_ref, from_wallet, amount)
+    }
+
+    public fun deposit(admin: &signer, to: address, fa: FungibleAsset) acquires ManagedFungibleAsset{
+        let asset = get_metadata();
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
+        let to_wallet = primary_fungible_store::ensure_primary_store_exists(to, asset);
+        fungible_asset::deposit_with_ref(transfer_ref, to_wallet, fa);
+    }
+    public entry fun freeze_account(admin: &signer, account: address) acquires ManagedFungibleAsset{
+        let asset = get_metadata();
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
+        let wallet = primary_fungible_store::ensure_primary_store_exists(account, asset);
+        fungible_asset::set_frozen_flag(transfer_ref, wallet, true);
+    }
+    public entry fun unfreeze_account(admin: &signer, account: address) acquires ManagedFungibleAsset{
+        let asset = get_metadata();
+        let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
+        let wallet = primary_fungible_store::ensure_primary_store_exists(account, asset);
+        fungible_asset::set_frozen_flag(transfer_ref, wallet, false);
     }
 }
 
